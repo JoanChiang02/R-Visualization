@@ -1,0 +1,62 @@
+---
+title: "NWHL Play-by-Play"
+author: "Joan_Chiang"
+date: "2023-02-20"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#install.packages("gganimate")
+library(readr)
+library(tidyverse)
+library(gganimate)
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+library(sportyR)
+```
+
+
+```{r}
+NWHL <- read.csv("hackathon_nwhl.csv")
+unique(NWHL$Home.Team)
+NWHL$Clock <- as.POSIXct(NWHL$Clock,format="%M:%S")
+class(NWHL$Period)
+```
+
+
+```{r}
+Day1_1<-NWHL %>% filter (Home.Team == "Minnesota Whitecaps") %>% filter(Away.Team=="Boston Pride")%>%arrange(Period)
+Day1_1 <- Day1_1 %>% mutate(Start=row_number(),End=as.integer(row_number()+1))
+Day1_1 <- Day1_1 %>% mutate(score.x = 100, score.y = 95)
+Day1_1 <- Day1_1 %>% mutate(clock.x = 25 , clock.y = 95)
+
+```
+
+```{r}
+#geom_hockey(league = "NHL",y_trans = 43,x_trans = 100 )
+plt2<-geom_hockey(league = "NHL",y_trans = 43,x_trans = 100)+geom_point(Day1_1,mapping=aes(x=X.Coordinate,y=Y.Coordinate,color=Team),size=4)
+
+plt2<-plt2+geom_text(Day1_1,mapping=aes(x=score.x,y=score.y,label=paste("Score:",Home.Team.Goals,":",Away.Team.Goals)),size=8)+geom_text(Day1_1,mapping=aes(x=clock.x,y=clock.y,label=paste("Period:",Period,"  ","Clock:",format(Clock,'%M:%S'))),size=6)+geom_text_repel(Day1_1,mapping=aes(x=X.Coordinate,y=Y.Coordinate,label=Event),size=6)
+
+#Theme
+plt2<-plt2+theme_void()+theme(legend.position = "bottom")+theme(axis.text.x=element_blank(),axis.ticks.x=element_blank(),axis.title.x=element_blank(),axis.title.y=element_blank(),axis.text.y=element_blank(),axis.ticks.y=element_blank())
+
+#Title
+plt2<-plt2+theme(plot.title = element_text(size=28,face="bold",hjust = 0.5),plot.subtitle = element_text(size=20,hjust = 0.5))+labs(title="Minnesota Whitecaps vs Boston Pride", subtitle= "2021-01-23",caption="Game Event Point @JoanChiang Data: hackathon_nwhl")
+
+#Animation
+plt2<-plt2+transition_states(Start)
+animate(plt2,nframes=1649,fps=2,height=500,width=1000)#1649
+anim_save('NWHL_EventMap.gif')
+```
+
+
+

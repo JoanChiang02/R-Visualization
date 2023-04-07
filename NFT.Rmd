@@ -1,0 +1,95 @@
+---
+title: "NFT Transactions"
+author: "Joan_Chiang"
+date: "2023-03-23"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(networkD3)
+library(htmlwidgets)
+```
+
+```{r}
+Tran <- read.csv("LBJ_topshot_transactions.csv")
+Mom <- read.csv("LBJ NFT moment data.csv")
+combine<-merge(Tran, Mom, by="play_external_id")
+combine$X<-as.character(combine$X)
+combine$X <- sub("^", "No.",combine$X )
+```
+
+
+```{r}
+flowdata <- combine %>% select(play_external_id,X,link,Detail,set_name,circulation_count,price_USD,play_category,transaction_timestamp)
+
+mean(flowdata$price_USD)
+median(flowdata$price_USD)
+quantile(flowdata$price_USD)
+
+flowdata <- flowdata %>% mutate(price=case_when(price_USD<=300~"≤$300",price_USD>=1100~"≥$1100",TRUE~"$300~$1100"))%>%drop_na()
+flowdata <- flowdata %>% mutate(transcation_time=case_when(transaction_timestamp>2021~"2021",transaction_timestamp<2021~"2020"))
+
+
+```
+
+```{r}
+networkdata<-flowdata %>% select(X,link,Detail,set_name,play_category,price,transcation_time)
+networkdata$price <- factor(networkdata$price, levels = c("≤$300", "$300~$1100","≥$1100"))
+networkdata$X <- factor(networkdata$X, levels = c("No.1","No.2","No.3","No.4","No.5","No.6","No.7","No.8","No.9","No.10","No.11","No.12","No.13","No.14","No.15","No.16","No.17","No.18","No.19","No.20","No.21"))
+
+```
+
+```{r}
+netdf1 <-networkdata %>%select("source"= X,"target"= set_name)%>%group_by_all()%>%count%>%rename("transcation_number"="n")
+
+netdf2 <-networkdata %>%select("source"= set_name,"target"= play_category)%>%group_by_all()%>%count%>%rename("transcation_number"="n")
+
+netdf3 <-networkdata %>%select("source"= play_category,"target"= price)%>%group_by_all()%>%count%>%rename("transcation_number"="n")
+
+netdf4 <-networkdata %>%select("source"= price,"target"=transcation_time)%>%group_by_all()%>%count%>%rename("transcation_number"="n")
+network<-rbind(netdf1,netdf2,netdf3,netdf4)
+networkdata<-networkdata%>%group_by_all()%>%count%>%rename("transcation_number"="n")
+```
+
+
+```{r}
+
+nodes <- data.frame(name=c(as.character(networkdata$X),as.character(networkdata$play_category),as.character(networkdata$set_name),as.character(networkdata$price),as.character(networkdata$transcation_time)) %>% unique())
+
+network$IDsource <- match(network$source, nodes$name)-1 
+network$IDtarget <- match(network$target, nodes$name)-1
+p<-sankeyNetwork(Links = network, Nodes = nodes, Source = "IDsource", Target = "IDtarget",Value = "transcation_number", NodeID = "name", fontSize = 14, nodeWidth = 10)
+
+p <- htmlwidgets::prependContent(p, htmltools::tags$h3("Transactions for NFTs featuring LeBron James"))
+p <- htmlwidgets::prependContent(p, htmltools::tags$p("@JoanChiang, Data: NBA Top Shot Transcaitons"))
+
+htmlwidgets::onRender(p, '
+  function(el) { 
+    var cols_x = this.sankey.nodes().map(d => d.x).filter((v, i, a) => a.indexOf(v) === i).sort(function(a, b){return a - b});
+    var labels = ["Moment","Play Category", "Set name","Price (USD)","TRANYear"];
+    cols_x.forEach((d, i) => {
+      d3.select(el).select("svg")
+        .append("text")
+        .attr("x", d)
+        .attr("y", 12)
+        .attr("font-size", 12)
+        .text(labels[i]);
+    })
+  }
+')
+networkdata %>% ungroup()%>% distinct(X,.keep_all = TRUE)%>% as_tibble() %>% rmarkdown::paged_table(options = list(rows.print = 21))
+networkdata %>% as_tibble() %>% rmarkdown::paged_table()
+
+```
+
+

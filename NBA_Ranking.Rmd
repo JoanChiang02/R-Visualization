@@ -1,0 +1,183 @@
+---
+title: "NBA Schedule"
+author: "Joan_Chiang"
+date: "2023-03-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#install.packages("gifski")
+
+```
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(ggimage)
+library(gganimate)
+library(hoopR)
+library(gifski)
+library(patchwork)
+library(plotly)
+```
+
+```{r}
+schedule <- read.csv("Schedule.csv")
+sch <- schedule %>% select(Date,Visitor.Neutral,PTS,Home.Neutral,PTS.1)
+sch <-sch %>% mutate(win_team=case_when(PTS>PTS.1~Visitor.Neutral,TRUE~Home.Neutral),lose_team=case_when(PTS<PTS.1~Visitor.Neutral,TRUE~Home.Neutral))
+sch$Date<-mdy(sch$Date)
+
+```
+
+
+```{r}
+sch_date<-unique(sch$Date)
+team_list <- unique(sch$Visitor.Neutral)
+#team_list=c("Philadelphia 76ers")
+record_by_date <-data.frame("Day"=Date(),"Team"=character(),"Win"=numeric(),"Loss"=numeric())
+b=0
+print(sch_date[1])
+for (i in 1:length(sch_date)){
+  for (j in team_list){
+    b=b+1
+    record_by_date[b,1]<-sch_date[i]
+    record_by_date[b,2]<-j
+    d<-sch%>%filter(Date==sch_date[i])
+    if(is.element(j,d$win_team)){
+      record_by_date[b,3] <-1
+    }
+    if(is.element(j,d$lose_team)){
+      record_by_date[b,4] <-1
+    }
+    
+  }
+  
+}
+
+record_by_date <- replace(record_by_date, is.na(record_by_date), 0)
+record_by_date["Cul_win"] <-0
+record_by_date["Cul_loss"] <-0
+
+```
+
+```{r}
+record_by_time <-data.frame("Day"=Date(),"Team"=character(),"Win"=numeric(),"Loss"=numeric(),"Cul_win"=numeric(),"Cul_loss"=numeric())
+for (team in team_list){
+  team_record<-record_by_date %>%filter(Team==team)%>%arrange(Day)
+  team_record$Cul_win[1] <- team_record$Win[1]
+  team_record$Cul_loss[1] <- team_record$Loss[1]
+    for(i in (2:nrow(team_record))){
+      team_record$Cul_win[i] <-team_record$Cul_win[i-1]+team_record$Win[i]
+      team_record$Cul_loss[i] <-team_record$Cul_loss[i-1]+team_record$Loss[i]
+    }
+
+  record_by_time<-rbind(record_by_time,team_record)
+}
+record_by_time<-record_by_time %>% mutate(win_per=Cul_win/(Cul_win+Cul_loss))
+record_by_time$win_per <- record_by_time$win_per %>% replace_na(0)
+```
+
+```{r}
+#get team_bio from other package and merge to record_by_time
+team_bio <- load_nba_team_box(2023)%>%select("Team"=team_display_name,team_color,team_logo)
+team_bio$Team[team_bio$Team=="LA Clippers"] <- "Los Angeles Clippers"
+team_bio <- team_bio %>%unique()
+div <- nba_teams%>%select("Team"=TEAMNAMEFULL,Conference)
+div$Team[div$Team=="LA Clippers"] <- "Los Angeles Clippers"
+team_bio <- merge(team_bio, div, by="Team")
+record_by_time <- merge(record_by_time, team_bio, by="Team")
+```
+
+
+```{r}
+#Line Data 
+playin_data<- record_by_time%>%select(Conference,Day,win_per,Team)%>%arrange(Conference,Day,desc(win_per))
+Day_list <- unique(playin_data$Day)
+
+playoffW <-data.frame(Day=Date(),"Team"=character(),win_per=numeric())
+playoffE <-data.frame(Day=Date(),"Team"=character(),win_per=numeric())
+playinW <-data.frame(Day=Date(),"Team"=character(),win_per=numeric())
+playinE <-data.frame(Day=Date(),"Team"=character(),win_per=numeric())
+
+for (day in Day_list ){
+  West_by_day <- playin_data %>%filter(Day==day &Conference=="West")
+  playinW_line <- West_by_day[10,]
+  playoffW_line <- West_by_day[6,]
+  playoffW<-rbind(playoffW,playoffW_line)
+  playinW <-rbind(playinW,playinW_line)
+  
+  East_by_day <- playin_data %>%filter(Day==day &Conference=="East")
+  playinE_line <- East_by_day[10,]
+  playoffE_line <- East_by_day[6,]
+  playoffE<-rbind(playoffE,playoffE_line)
+  playinE <-rbind(playinE,playinE_line)
+}
+
+trade_line <- data.frame("Date"=as.Date("2023-02-09"),"Day"=Day_list)
+#print(playoffW)
+```
+
+
+```{r}
+west_record <- record_by_time %>% filter(Conference=="West")
+
+gif1<-ggplot(west_record,mapping=aes(x=Day,y=win_per,group=Team))+geom_line(aes(color=Team),size=2)+geom_image(mapping=aes(x=Day,y=win_per,image=team_logo),size=0.07,by='height')+scale_color_manual(values=c(	
+"#0c479D","#0E2240","#FFC72C","#CE1141","#C8102E","#552583","#5D76A9","#236192","#85714D","#007AC1","#1D1160","#000000","#5A2D81","#C4CED4","#00471B"))+geom_hline(data=playoffW, aes(yintercept=win_per),size=1.5)+geom_hline(data=playinW, aes(yintercept=win_per),linetype="twodash",color="red",size=1.5)+geom_vline(data=trade_line,aes(xintercept=Date),color="blue")
+
+gif1<-gif1+theme_classic()+theme(axis.title.x = element_blank(),axis.ticks=element_blank(),legend.title = element_blank(),axis.title.y = element_text(size=18,color="black"),axis.text = element_text(size=18,color="black"),legend.position="none")+theme(aspect.ratio=4/3)+coord_cartesian(ylim = c(0,1.0))+theme(plot.background = element_rect(fill = "#E5D2B1"),panel.background = element_rect(fill = "#E5D2B1"))+labs(title="2022-23 NBA Western Rankings Day By Day",caption = "NBA Ranking @JoanChiang, Data: Basketball-Reference")+theme(plot.title = element_text(size=26),plot.caption = element_text(size=12))+ylab("Win%")
+#print(gif1)
+
+gif_west<-gif1+transition_reveal(Day)
+animate(gif_west,nframes=246,fps=10,height=800,width=600,renderer = gifski_renderer(loop = FALSE))
+#anim_save('NBA_West_Ranking.gif')
+```
+
+```{r}
+east_record <- record_by_time %>% filter(Conference=="East")
+
+gif2<-ggplot(east_record,mapping=aes(x=Day,y=win_per,group=Team))+geom_line(aes(color=Team),size=2)+geom_image(mapping=aes(x=Day,y=win_per,image=team_logo),size=0.08,by='height')+scale_color_manual(values=c(	
+"#C8102E","#007A33","#000000","#00788c","#CE1141","#860038","#bec0c2","#fdbb3092","#98002E","#00471B","#F58426","#0077C0","#006BB6","#753bbd","#E31837"))+geom_hline(data=playoffE, aes(yintercept=win_per),size=1.5)+geom_hline(data=playinE, aes(yintercept=win_per),linetype="twodash",color="red",size=1.5)+geom_vline(data=trade_line,aes(xintercept=Date),color="blue")
+
+gif2<-gif2+theme_classic()+theme(axis.title.x = element_blank(),axis.ticks=element_blank(),legend.title = element_blank(),axis.title.y = element_text(size=18,color="black"),axis.text = element_text(size=18,color="black"),legend.position="none")+theme(aspect.ratio=4/3)+coord_cartesian(ylim = c(0,1.0))+theme(plot.background = element_rect(fill = "#E5D2B1"),panel.background = element_rect(fill = "#E5D2B1"))+labs(title="2022-23 NBA Eastern Rankings Day By Day",caption = "NBA Ranking @JoanChiang, Data: Basketball-Reference")+theme(plot.title = element_text(size=26),plot.caption = element_text(size=12))+ylab("Win%")
+#print(gif2)
+
+gif_east<-gif2+transition_reveal(Day)
+animate(gif_east,nframes=246,fps=10,height=800,width=600,renderer = gifski_renderer(loop = FALSE))
+#anim_save('NBA_East_Ranking.gif')
+```
+
+```{r}
+lastD_W<-west_record %>% filter(Day=="2023-04-09")
+lastR_W_off<-playoffW %>% filter(Day=="2023-04-09")
+lastR_W_in <-playinW %>% filter(Day=="2023-04-09")
+lastD_E<-east_record %>% filter(Day=="2023-04-09")
+lastR_E_off<-playoffE %>% filter(Day=="2023-04-09")
+lastR_E_in <-playinE %>% filter(Day=="2023-04-09")
+
+plt1<-ggplot(west_record,mapping=aes(x=Day,y=win_per,group=Team))+geom_line(aes(color=Team),size=2)+geom_image(data=lastD_W,mapping=aes(x=Day,y=win_per,image=team_logo),size=0.07,by='height')+scale_color_manual(values=c(	
+"#0c479D","#0E2240","#FFC72C","#CE1141","#C8102E","#552583","#5D76A9","#236192","#85714D","#007AC1","#1D1160","#000000","#5A2D81","#C4CED4","#00471B"))+geom_hline(data=lastR_W_off, aes(yintercept=win_per),size=1.5)+geom_hline(data=lastR_W_in, aes(yintercept=win_per),linetype="twodash",color="red",size=1.5)+geom_vline(data=trade_line,aes(xintercept=Date),color="blue")
+
+plt1<-plt1+theme_classic()+theme(axis.title.x = element_blank(),axis.ticks=element_blank(),legend.title = element_blank(),axis.title.y = element_text(size=9,color="black"),axis.text = element_text(size=9,color="black"),legend.position="none")+theme(aspect.ratio=4/3)+coord_cartesian(ylim = c(0,1.0))+theme(plot.background = element_rect(fill = "#E5D2B1"),panel.background = element_rect(fill = "#E5D2B1"))+labs(title="2022-23 NBA Western Rankings Day By Day",caption = "NBA Ranking @JoanChiang, Data: Basketball-Reference")+theme(plot.title = element_text(size=16),plot.caption = element_text(size=6))+ylab("Win%")
+
+
+plt2<-ggplot(east_record,mapping=aes(x=Day,y=win_per,group=Team))+geom_line(aes(color=Team),size=2)+geom_image(data=lastD_E,mapping=aes(x=Day,y=win_per,image=team_logo),size=0.08,by='height')+scale_color_manual(values=c(	
+"#C8102E","#007A33","#000000","#00788c","#CE1141","#860038","#bec0c2","#fdbb3092","#98002E","#00471B","#F58426","#0077C0","#006BB6","#753bbd","#E31837"))+geom_hline(data=lastR_E_off, aes(yintercept=win_per),size=1.5)+geom_hline(data=lastR_E_in, aes(yintercept=win_per),linetype="twodash",color="red",size=1.5)+geom_vline(data=trade_line,aes(xintercept=Date),color="blue")
+
+plt2<-plt2+theme_classic()+theme(axis.title.x = element_blank(),axis.ticks=element_blank(),legend.title = element_blank(),axis.title.y = element_text(size=9,color="black"),axis.text = element_text(size=9,color="black"),legend.position="none")+theme(aspect.ratio=4/3)+coord_cartesian(ylim = c(0,1.0))+theme(plot.background = element_rect(fill = "#E5D2B1"),panel.background = element_rect(fill = "#E5D2B1"))+labs(title="2022-23 NBA Eastern Rankings Day By Day",caption = "NBA Ranking @JoanChiang, Data: Basketball-Reference")+theme(plot.title = element_text(size=16),plot.caption = element_text(size=6))+ylab("Win%")
+#print(plt2)
+#print(plt1)
+
+plt3 <- plt1 + plt2
+print(plt3)
+#ggsave("ranking.png",width=12,height = 8,limitsize = FALSE)
+```
+
+```{r}
+ggplotly(plt1)
+ggplotly(plt2)
+```
+
